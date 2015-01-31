@@ -212,31 +212,48 @@ void t_fsharp_generator::init_generator() {
   
   f_types_ << generate_fsharp_namespace() << endl
 				<< fsharp_type_opens()
-				<< fsharp_thrift_opens() << endl << endl
-				<< "open " << namespace_name_ << endl << endl;
+				<< fsharp_thrift_opens() << endl << endl;
   generate_isset_type(f_types_);
 				
   f_consts_ << generate_fsharp_namespace() << endl << endl
 				<< fsharp_type_opens() << endl
-				<< fsharp_thrift_opens() << endl 
-				<< "open " << namespace_name_ << endl << endl;
+				<< fsharp_thrift_opens() << endl << endl;
   f_service_ << generate_fsharp_namespace()
 				<< fsharp_type_opens()
-				<< fsharp_thrift_opens() << endl
-				<< "open " << namespace_name_ << endl << endl;
+				<< fsharp_thrift_opens() << endl << endl;
 }
 
 void t_fsharp_generator::generate_isset_type(t_fs_ofstream& out) {
 	out.indent() << "module Helpers =" << endl;
 	out.indent_up();
-	out.indent() << "let inline readMap iprot f =" << endl;
+	out.indent() << "let inline readMap (iprot:TProtocol) f =" << endl;
 	out.indent_up();
-	out.indent() << "let map = iprot.ReadMapBegin()" << endl;
-	out.indent() << "let result = f map.Count" << endl;
+	out.indent() << "let _map = iprot.ReadMapBegin()" << endl;
+	out.indent() << "let result = f _map.Count" << endl;
 	out.indent() << "iprot.ReadMapEnd()" << endl;
 	out.indent() << "result" << endl << endl;
 	out.indent_down();
-	out.indent_down();
+    out.indent() << "let inline readSet (iprot:TProtocol) f = " << endl;
+    out.indent_up();
+    out.indent() << "let _set = iprot.ReadSetBegin()" << endl;
+    out.indent() << "let result = f _set.Count" << endl;
+    out.indent() << "iprot.ReadSetEnd()" << endl;
+    out.indent() << "result" << endl << endl;
+    out.indent_down();
+    out.indent() << "let inline readList (iprot:TProtocol) f = " << endl;
+    out.indent_up();
+    out.indent() << "let _list = iprot.ReadListBegin()" << endl;
+    out.indent() << "let result = f _list.Count" << endl;
+    out.indent() << "iprot.ReadListEnd()" << endl;
+    out.indent() << "result" << endl << endl;
+    out.indent_down();
+    out.indent() << "let inline readStruct (iprot:TProtocol) (tbase:#TBase) = " << endl;
+    out.indent_up();
+    out.indent() << "tbase.Read(iprot)" << endl;
+    out.indent() << "tbase" << endl;
+    out.indent_down();
+    out << endl << endl;
+    out.indent_down();
 
 	out.indent() << "type Isset<'a> = " << endl;
 	out.indent_up();
@@ -273,6 +290,7 @@ string t_fsharp_generator::fsharp_thrift_opens() {
 
 void t_fsharp_generator::close_generator() { }
 void t_fsharp_generator::generate_typedef(t_typedef* ttypedef) {  
+    
 }
 
 string render_fsharp_type(t_type* type) {
@@ -364,6 +382,7 @@ void t_fsharp_generator::print_const_def_value(t_fs_ofstream& out, string name, 
     const map<t_const_value*, t_const_value*>& val = value->get_map();
     map<t_const_value*, t_const_value*>::const_iterator v_iter;
 	out << "(";
+    bool first = true;
     for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
       t_type* field_type = NULL;
       for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
@@ -375,23 +394,29 @@ void t_fsharp_generator::print_const_def_value(t_fs_ofstream& out, string name, 
         throw "type error: " + type->get_name() + " has no field " + v_iter->first->get_string();
       }
       string val = render_const_value(out, name, field_type, v_iter->second);
-      out << make_property_name(v_iter->first->get_string()) << " = (Isset " << val << "),";
+
+      out << make_property_name(v_iter->first->get_string()) << " = (IsSet " << val << ")";
+      if (first) {
+          first = false;
+      }
+      else {
+          out << ", ";
+      }
+
     }
 	out << ")";
   } else if (type->is_map()) {
-	out.indent() << "[" << endl;
-	out.indent_up();
-    t_type* ktype = ((t_map*)type)->get_key_type();
+	out << "[";
+	t_type* ktype = ((t_map*)type)->get_key_type();
     t_type* vtype = ((t_map*)type)->get_val_type();
     const map<t_const_value*, t_const_value*>& val = value->get_map();
     map<t_const_value*, t_const_value*>::const_iterator v_iter;
     for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
       string key = render_const_value(out, name, ktype, v_iter->first);
       string val = render_const_value(out, name, vtype, v_iter->second);
-      out.indent() << key << " , " << val << ";" << endl;
+      out << key << " , " << val << ";";
     }
-	out.indent_down();
-	out.indent() << "] |> Map.ofList";
+	out << "] |> Map.ofList";
   } else if (type->is_list() || type->is_set()) {
     t_type* etype;
     if (type->is_list()) {
@@ -412,7 +437,7 @@ void t_fsharp_generator::print_const_def_value(t_fs_ofstream& out, string name, 
 
 void t_fsharp_generator::print_const_value(t_fs_ofstream& out, string name, t_type* type, t_const_value* value, bool in_static, bool defval, bool wrapIsset) {
   if (wrapIsset) {
-	  out << "IsSet ";
+	  out << "IsSet (";
   }
   if (type->is_base_type()) {
     string v2 = render_const_value(out, name, type, value);
@@ -421,10 +446,6 @@ void t_fsharp_generator::print_const_value(t_fs_ofstream& out, string name, t_ty
     out << "enum<" << type_name(type, false, true) << ">" << value->get_integer();
   } else if (type->is_struct() || type->is_xception()) {
     out << type_name(type);
-  //} else if (type->is_map()) {
-  //  out << type_name(type, true, true) << "()";
-  //} else if (type->is_list() || type->is_set()) {
-  //  out << type_name(type) << "()";
   }
 
   if (defval && !type->is_base_type() && !type->is_enum()) {
@@ -503,7 +524,6 @@ void t_fsharp_generator::generate_fsharp_struct_definition(t_fs_ofstream &out, t
 
   out.indent() << "type " << tstruct->get_name() << "() = " << endl;
   out.indent_up();
-  out.indent() << "inherit TBase()" << endl;
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
 
@@ -511,16 +531,18 @@ void t_fsharp_generator::generate_fsharp_struct_definition(t_fs_ofstream &out, t
   for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
 	t_type* t = (*m_iter)->get_type();
 	std::string name = capitalize((*m_iter)->get_name());
-	out.indent() << "member val " << name << " = (";
+	out.indent() << "member val " << name << " = ";
 	if ((*m_iter)->get_value() != NULL) {	  
       print_const_value(out, name, t, (*m_iter)->get_value(), true, true, true);
+      out << ")";
     } else {
 	  out << "NotSet";
 	}
-	out << ") with get,set";
+	out << " with get,set";
 	out << endl;
   }  
-
+  out.indent() << "interface TBase with" << endl;
+  out.indent_up();
   generate_fsharp_struct_reader(out, tstruct);
   out << endl;
   if (is_result) {
@@ -529,6 +551,7 @@ void t_fsharp_generator::generate_fsharp_struct_definition(t_fs_ofstream &out, t
     generate_fsharp_struct_writer(out, tstruct);
   }
   out << endl;
+  out.indent_down();
   generate_fsharp_struct_tostring(out, tstruct);
   out.indent_down();
   out << endl;
@@ -537,24 +560,21 @@ void t_fsharp_generator::generate_fsharp_struct_definition(t_fs_ofstream &out, t
 
 void t_fsharp_generator::generate_fsharp_struct_reader(t_fs_ofstream& out, t_struct* tstruct) {
   out.indent() <<
-    "override x.Read (iprot:TProtocol) = " << endl;
+    "member x.Read (iprot:TProtocol) = " << endl;
   out.indent_up();
 
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
-  out.indent() <<
-    "let mutable field:TField = TField()" << endl;
-
   // Create inline funciton for processing fields
   out.indent() << "let rec doRead() = " << endl;
   out.indent_up();
-  out.indent() << "field <- iprot.ReadStructBegin()" << endl;
+  out.indent() << "let field:TField = iprot.ReadFieldBegin()" << endl;
   out.indent() << "match field.Type with" << endl;
   out.indent() << "| TType.Stop -> ()";  
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
 	out << endl;
-    out.indent() << "| _ when field.ID  = " << (*f_iter)->get_key() << " && field.Type = " << type_to_enum((*f_iter)->get_type()) << " -> " << endl;
+    out.indent() << "| _ when field.ID  = " << (*f_iter)->get_key() << "s && field.Type = " << type_to_enum((*f_iter)->get_type()) << " -> " << endl;
     out.indent_up();
     out.indent();
 	generate_deserialize_field(out, *f_iter,"x.");
@@ -565,7 +585,7 @@ void t_fsharp_generator::generate_fsharp_struct_reader(t_fs_ofstream& out, t_str
   out.indent() << "doRead()" << endl << endl;
   out.indent_down();
 
-  out.indent() << "iprot.ReadStructBegin()" << endl;
+  out.indent() << "iprot.ReadStructBegin() |> ignore" << endl;
   out.indent() << "doRead()" << endl;
   out.indent() << "iprot.ReadStructEnd()" << endl;
 
@@ -573,7 +593,7 @@ void t_fsharp_generator::generate_fsharp_struct_reader(t_fs_ofstream& out, t_str
 }
 
 void t_fsharp_generator::generate_fsharp_struct_writer(t_fs_ofstream& out, t_struct* tstruct) {
-  out.indent() << "override x.Write(oprot:TProtocol) =" << endl;
+  out.indent() << "member x.Write(oprot:TProtocol) =" << endl;
   out.indent_up();
 
   string name = tstruct->get_name();
@@ -581,7 +601,7 @@ void t_fsharp_generator::generate_fsharp_struct_writer(t_fs_ofstream& out, t_str
   vector<t_field*>::const_iterator f_iter;
 
   out.indent() <<
-    "let mutable struct:TStruct = TStruct(\"" << name << "\")" << endl;
+    "let mutable struc:TStruct = TStruct(\"" << name << "\")" << endl;
   out.indent() <<
     "oprot.WriteStructBegin(struc);" << endl;
 
@@ -593,21 +613,22 @@ void t_fsharp_generator::generate_fsharp_struct_writer(t_fs_ofstream& out, t_str
 		  out.indent() << "| null " << endl;          
 		}
 		out.indent() << "| NotSet -> ignore()" << endl;
-		out.indent() << "| Isset v -> " << endl;
+		out.indent() << "| IsSet v -> " << endl;
 		out.indent_up();
-		out.indent() << "let field:TField = TField();" << endl;
+		out.indent() << "let mutable field:TField = TField()" << endl;
     
 
 		out.indent() << "field.Name <- \"" << (*f_iter)->get_name() << "\"" << endl;
 		out.indent() << "field.Type <- " << type_to_enum((*f_iter)->get_type()) << endl;
-		out.indent() << "field.ID <- " << (*f_iter)->get_key() << endl << endl;
+		out.indent() << "field.ID <- " << (*f_iter)->get_key() << "s" << endl << endl;
 		out.indent() << "oprot.WriteFieldBegin(field)" << endl;
 
 		generate_serialize_value(out, *f_iter,"v");
 
 		out.indent() << "oprot.WriteFieldEnd()" << endl;
+        out.indent_down();
 	  }
-      out.indent_down();
+      
       out << endl;
       out.indent() << "oprot.WriteFieldStop()" << endl;
   }
@@ -619,7 +640,7 @@ void t_fsharp_generator::generate_fsharp_struct_writer(t_fs_ofstream& out, t_str
 
 void t_fsharp_generator::generate_fsharp_struct_result_writer(t_fs_ofstream& out, t_struct* tstruct) {
   out.indent() <<
-    "override __.Write(oprot:TProtocol) =" << endl;
+    "member x.Write(oprot:TProtocol) =" << endl;
   indent_up();
 
   string name = tstruct->get_name();
@@ -706,41 +727,37 @@ void t_fsharp_generator::generate_fsharp_struct_tostring(t_fs_ofstream& out, t_s
     if (first) {
       first = false;
       out.indent() <<
-        "sb.Append(\"" << prop_name((*f_iter)) << ": \")" << endl;
+        "sb.Append(\"" << prop_name((*f_iter)) << ": \") |> ignore" << endl;
     } else {
       out.indent() <<
-        "sb.Append(\"," << prop_name((*f_iter)) << ": \")" << endl;
+        "sb.Append(\"," << prop_name((*f_iter)) << ": \") |> ignore" << endl;
     }
     t_type* ttype = (*f_iter)->get_type();
     if (ttype->is_xception() || ttype->is_struct()) {
       out.indent() <<
-        "sb.Append(" << "x." << prop_name((*f_iter))  << ".ToString())" << endl;
+        "sb.Append(" << "x." << prop_name((*f_iter))  << ".ToString()) |> ignore" << endl;
     } else {
       out.indent() <<
-        "sb.Append(" << "x." << prop_name((*f_iter))  << ")" << endl;
+        "sb.Append(" << "x." << prop_name((*f_iter))  << ") |> ignore" << endl;
     }
   }
 
-  out.indent() << "sb.Append(\")\")" << endl;
-  out.indent() << "return sb.ToString()" << endl;
+  out.indent() << "sb.Append(\")\") |> ignore" << endl;
+  out.indent() << "sb.ToString()" << endl;
 
   out.indent_down();
 }
 
 void t_fsharp_generator::generate_service(t_service* tservice) {
-  f_service_ <<
-  indent(f_service_) <<
-    "module " << service_name_ << " =" << endl;
-  indent_up();
+  f_service_.indent() <<    "module " << service_name_ << " =" << endl;
+  f_service_.indent_up();
   generate_service_helpers(tservice);
   generate_service_interface(tservice);
   generate_service_client(tservice);
   generate_service_server(tservice);
   
+  f_service_.indent_down();
 
-  indent_down();
-
-  indent(f_service_);  
 }
 
 void t_fsharp_generator::generate_service_interface(t_service* tservice) {
@@ -753,22 +770,21 @@ void t_fsharp_generator::generate_service_interface(t_service* tservice) {
 
   generate_fsharp_doc(f_service_, tservice);
 
-  indent(f_service_) << "type Iface = " << endl;
-  indent(f_service_) << extends_iface;
+  f_service_.indent() << "type Iface = " << endl;
+  f_service_.indent() << extends_iface;
 
-  indent_up();
+  f_service_.indent_up();
   vector<t_function*> functions = tservice->get_functions();
   vector<t_function*>::iterator f_iter;
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter)
   {
 	generate_fsharp_doc(f_service_, *f_iter);
 
-	indent(f_service_) <<
+    f_service_.indent() <<
       function_signature(*f_iter) << endl;    
   }
-  indent_down();
-  f_service_ <<
-    indent() << endl << endl;
+  f_service_.indent_down();
+  f_service_.indent() << endl << endl;
 }
 
 void t_fsharp_generator::generate_service_helpers(t_service* tservice) {
@@ -1136,7 +1152,7 @@ void t_fsharp_generator::generate_deserialize_field_inline(t_fs_ofstream& out, t
     if (type->is_struct() || type->is_xception()) {
       generate_deserialize_struct_inline(out, (t_struct*)type);
     } else if (type->is_container()) {
-      generate_deserialize_container(out, type);
+      generate_deserialize_container_inline(out, type);
     } else if (type->is_base_type() || type->is_enum()) {
       if (type->is_enum())
       {
@@ -1199,12 +1215,16 @@ void t_fsharp_generator::generate_deserialize_field(t_fs_ofstream& out, t_field*
   string name = prefix + prop_name(tfield);
 
   if (type->is_struct() || type->is_xception()) {
-	out << name << " <- ";
+	out << name << " <- IsSet <| ";
+    out.indent_up();
     generate_deserialize_struct_inline(out, (t_struct*)type);
+    out << endl;
+    out.indent_down();
   } else if (type->is_container()) {
-    generate_deserialize_container(out, type, name);
+      out << name << " <- IsSet <| ";
+    generate_deserialize_container_inline(out, type);
   } else if (type->is_base_type() || type->is_enum()) {
-    out << name << " <- ";
+    out << name << " <- IsSet <| ";
 
     if (type->is_enum())
     {
@@ -1245,83 +1265,94 @@ void t_fsharp_generator::generate_deserialize_field(t_fs_ofstream& out, t_field*
           out << "ReadDouble()";
           break;
         default:
-          throw "compiler error: no C# name for base type " + tbase;
+          throw "compiler error: no F# name for base type " + tbase;
       }
     } else if (type->is_enum()) {
       out << "ReadI32()";
-    } 
+    }
+    out << endl;
   } else {
     printf("DO NOT KNOW HOW TO DESERIALIZE FIELD '%s' TYPE '%s'\n", tfield->get_name().c_str(), type_name(type).c_str());
   }
 }
 
 void t_fsharp_generator::generate_deserialize_struct_inline(t_fs_ofstream& out, t_struct* tstruct) {
-	out << type_name(tstruct) << "()" << ".Read(iprot)" << endl;
+	out << "Helpers.readStruct iprot (" << type_name(tstruct) << "())";
 }
 
 void t_fsharp_generator::generate_deserialize_struct(t_fs_ofstream& out, t_struct* tstruct, string prefix) {
   out <<
     indent() << prefix << " = new " << type_name(tstruct) << "();" << endl <<
-    indent() << prefix << ".Read(iprot);" << endl;
+    indent() << "Helpers.readStruct iprot " << prefix << " |> ignore" << endl;
 }
 
 void t_fsharp_generator::generate_deserialize_container_inline(t_fs_ofstream& out, t_type* ttype) {
+    string obj;
 
+    if (ttype->is_map()) {
+        obj = tmp("_map");
+    }
+    else if (ttype->is_set()) {
+        obj = tmp("_set");
+    }
+    else if (ttype->is_list()) {
+        obj = tmp("_list");
+    }
+
+    if (ttype->is_map()) {
+        out << "Helpers.readMap iprot" << endl;
+        out.indent_up();
+        out.indent() << "(fun count -> " << endl;
+        out.indent_up();
+        out.indent() << "[ for i in 0 .. count - 1 do " << endl;
+        out.indent_up();
+        generate_deserialize_map_element(out, (t_map*)ttype);
+        out << "] |> Map.ofList)";
+        out.indent_down();
+        out.indent_down();
+        out.indent_down();
+    }
+    if (ttype->is_set()) {
+        out << "Helpers.readSet iprot" << endl;
+        out.indent_up();
+        out.indent() << "(fun count -> " << endl;
+        out.indent_up();
+        out.indent() << "[ for i in 0 .. count - 1 do " << endl;
+        out.indent_up();
+        generate_deserialize_set_element(out, (t_set*)ttype);
+        out << "] |> Set.ofList)";
+        out.indent_down();
+        out.indent_down();
+        out.indent_down();
+    }
+    else if (ttype->is_list()) {
+        out << "Helpers.readList iprot" << endl;
+        out.indent_up();
+        out.indent() << "(fun count -> " << endl;
+        out.indent_up();
+        out.indent() << "[ for i in 0 .. count - 1 do " << endl;
+        out.indent_up();
+        generate_deserialize_list_element(out, (t_list*)ttype);
+        out.indent_down();
+        out.indent_down();
+        out.indent_down();        
+    }
 }
 
 void t_fsharp_generator::generate_deserialize_container(t_fs_ofstream& out, t_type* ttype, string prefix) {
   string obj;
 
-  if (ttype->is_map()) {
-    obj = tmp("_map");
-  } else if (ttype->is_set()) {
-    obj = tmp("_set");
+  if (ttype->is_set()) {
+    obj = tmp("_set");    
   } else if (ttype->is_list()) {
-    obj = tmp("_list");
+    obj = tmp("_list");    
   }
 
-  if (ttype->is_set()) {
-    out << "let " << obj << ":TSet = iprot.ReadSetBegin()" << endl;
-  } else if (ttype->is_list()) {
-    out << "let " << obj << ":TList = iprot.ReadListBegin()" << endl;
-  }
-  if(prefix.length() > 0) {
-	out << prefix << " = " << endl;
-	out.indent_up();
-	out.indent();
-  }
-  
-  if (ttype->is_map()) {  
-	out << "Helpers.readMap iprot" << endl;
-	out.indent_up();
-	out.indent() << "(fun count -> " << endl;
-	out.indent_up();
-	out.indent() << "[ for i in 0 .. count - 1 do "<< endl;
-	out.indent_up();
-	generate_deserialize_map_element(out, (t_map*)ttype, prefix);
-	out << "] |> Map.ofList)";
-	out.indent_down();
-	out.indent_down();
-	out.indent_down();
-  } else {
-	  out << "[ for i in 0 .. " << obj << ".Count do "<< endl;
-	  out.indent_up();
-  }
-
-  if (ttype->is_set()) {
-    generate_deserialize_set_element(out, (t_set*)ttype, prefix);
-	out << "] |> Set.ofList" << endl;
-	out.indent_down();
-	out.indent() << "iprot.ReadSetEnd();" << endl;	
-	
-  } else if (ttype->is_list()) {
-    generate_deserialize_list_element(out, (t_list*)ttype, prefix);
-	out << endl;
-	out.indent_down();
-	out.indent() << "iprot.ReadListEnd();" << endl;		
-  }  
+  out << prefix << " = " << endl;
+  out.indent_up();
+  out.indent();
+  generate_deserialize_container_inline(out, ttype);
   out.indent_down();
-  
 }
 
 void t_fsharp_generator::generate_deserialize_map_element(t_fs_ofstream& out, t_map* tmap, string prefix) {
@@ -1330,8 +1361,7 @@ void t_fsharp_generator::generate_deserialize_map_element(t_fs_ofstream& out, t_
 
   t_field fkey(tmap->get_key_type(), key);
   t_field fval(tmap->get_val_type(), val);
-  out.indent();
-  generate_deserialize_field_inline(out, &fkey);
+  out.indent() << "yield ";
   generate_deserialize_field_inline(out, &fkey);
   out << ",";
   generate_deserialize_field_inline(out, &fval);
@@ -1341,25 +1371,17 @@ void t_fsharp_generator::generate_deserialize_map_element(t_fs_ofstream& out, t_
 void t_fsharp_generator::generate_deserialize_set_element(t_fs_ofstream& out, t_set* tset, string prefix) {
   string elem = tmp("_elem");
   t_field felem(tset->get_elem_type(), elem);
-
-  out.indent() << declare_field(&felem, true) << endl;
-
-  generate_deserialize_field(out, &felem);
-
-  out.indent() << prefix << ".Add(" << elem << ");" << endl;
+  out << "yield ";
+  generate_deserialize_field_inline(out, &felem);
+  out << endl;
 }
 
 void t_fsharp_generator::generate_deserialize_list_element(t_fs_ofstream& out, t_list* tlist, string prefix) {
   string elem = tmp("_elem");
   t_field felem(tlist->get_elem_type(), elem);
-
-  out.indent() <<
-    declare_field(&felem, true) << endl;
-
-  generate_deserialize_field(out, &felem);
-
-  out.indent() <<
-    prefix << ".Add(" << elem << ");" << endl;
+  out << "yield ";
+  generate_deserialize_field_inline(out, &felem);
+  out << endl;
 }
 
 void t_fsharp_generator::generate_serialize_value(t_fs_ofstream& out,t_field* tfield,string name) {
@@ -1434,9 +1456,7 @@ void t_fsharp_generator::generate_serialize_field(t_fs_ofstream& out, t_field* t
 }
 
 void t_fsharp_generator::generate_serialize_struct(t_fs_ofstream& out, t_struct* tstruct, string prefix) {
-  (void) tstruct;
-  out <<
-    indent() << prefix << ".Write(oprot);" << endl;
+  out.indent() << prefix << ".Write(oprot)" << endl;
 }
 
 void t_fsharp_generator::generate_serialize_container(t_fs_ofstream& out, t_type* ttype, string prefix) {
