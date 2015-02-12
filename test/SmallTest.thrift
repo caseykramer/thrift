@@ -19,6 +19,7 @@
 
 
 namespace rb TestNamespace
+namespace fsharp Test
 
 struct Goodbyez {
   1: i32 val = 325;
