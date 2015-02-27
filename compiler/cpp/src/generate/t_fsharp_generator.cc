@@ -101,11 +101,9 @@ class t_fsharp_generator : public t_oop_generator {
 
     void generate_function_helpers(t_function* tfunction);
     void generate_service_interface (t_service* tservice);
-    void generate_service_du(t_service* tservice);
     void generate_service_helpers (t_service* tservice);
     void generate_service_client (t_service* tservice);
     void generate_service_server (t_service* tservice);
-    void generage_service_observable(t_service* tservice);
     void generate_process_function (t_service* tservice, t_function* function);	
 
     void generate_deserialize_field (t_fs_ofstream& out, t_field* tfield, std::string prefix="");
@@ -842,8 +840,6 @@ void t_fsharp_generator::generate_service(t_service* tservice) {
   generate_service_interface(tservice);
   generate_service_client(tservice);
   generate_service_server(tservice);
-  generate_service_du(tservice);
-  generage_service_observable(tservice);
   
   f_service_.indent_down();
 
@@ -872,18 +868,6 @@ void t_fsharp_generator::generate_service_interface(t_service* tservice) {
   }
   f_service_.indent_down();
   f_service_ << endl << endl;
-}
-
-void t_fsharp_generator::generate_service_du(t_service* tservice) {
-
-    f_service_.indent() << "type " << capitalize(tservice->get_name()) << " =" << endl;
-    f_service_.indent_up();
-    vector<t_function*> functions = tservice->get_functions();
-    vector<t_function*>::iterator f_iter;
-    for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter){
-        f_service_.indent() << "| " << capitalize((*f_iter)->get_name()) << " of " << du_case_type(*f_iter) << endl;
-    }
-    f_service_ << endl;
 }
 
 void t_fsharp_generator::generate_service_helpers(t_service* tservice) {
@@ -1059,71 +1043,6 @@ void t_fsharp_generator::generate_service_server(t_service* tservice) {
   f_service_.indent_down();
   f_service_.indent() << endl << endl;
   f_service_.indent_down();
-}
-
-void t_fsharp_generator::generage_service_observable(t_service* tservice) {
-    vector<t_function*> functions = tservice->get_functions();
-    vector<t_function*>::iterator f_iter;
-
-    f_service_.indent() << "type Observable() = " << endl;
-    f_service_.indent_up();
-    f_service_ << endl;
-    for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter)
-    {
-        generate_process_function(tservice, *f_iter);
-    }
-
-    f_service_.indent() << "let processMap = [" << endl;
-    f_service_.indent_up();
-    f_service_.indent_up();
-    bool first = true;
-    for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
-        if (first) {
-            first = false;
-        }
-        else {
-            f_service_ << endl;
-        }
-        f_service_.indent() << "\"" << (*f_iter)->get_name() << "\", " << (*f_iter)->get_name() << "_Process";
-    }
-    f_service_ << "] |> Map.ofList" << endl;
-    f_service_.indent_down();
-    f_service_.indent_down();
-
-
-    f_service_.indent() << "interface TProcessor with" << endl;
-    f_service_.indent_up();
-    f_service_.indent() << "member x.Process(iprot:TProtocol, oprot:TProtocol):bool = " << endl;
-    f_service_.indent_up();
-    f_service_.indent() << "try" << endl;
-    f_service_.indent_up();
-
-    f_service_.indent() << "let msg = iprot.ReadMessageBegin()" << endl;
-
-    f_service_.indent() << "match processMap |> Map.tryFind msg.Name with" << endl;
-    f_service_.indent() << "| None ->" << endl;
-    f_service_.indent_up();
-    f_service_.indent() << "TProtocolUtil.Skip(iprot, TType.Struct)" << endl;
-    f_service_.indent() << "iprot.ReadMessageEnd();" << endl;
-    f_service_.indent() << "let x = new TApplicationException (TApplicationException.ExceptionType.UnknownMethod,(sprintf \"Invalid method name: '%s'\" msg.Name))" << endl;
-    f_service_.indent() << "oprot.WriteMessageBegin(TMessage(msg.Name, TMessageType.Exception, msg.SeqID))" << endl;
-    f_service_.indent() << "x.Write(oprot);" << endl;
-    f_service_.indent() << "oprot.WriteMessageEnd()" << endl;
-    f_service_.indent() << "oprot.Transport.Flush()" << endl;
-    f_service_.indent() << "true" << endl;
-    f_service_.indent_down();
-    f_service_.indent() << "| Some f ->" << endl;
-    f_service_.indent_up();
-    f_service_.indent() << "f(msg.SeqID, iprot, oprot)" << endl;
-    f_service_.indent() << "true" << endl;
-    f_service_.indent_down();
-    f_service_.indent_down();
-    f_service_.indent() << "with :? System.IO.IOException as e -> false" << endl;
-    f_service_.indent_down();
-    f_service_ << endl;
-    f_service_.indent_down();
-    f_service_.indent() << endl << endl;
-    f_service_.indent_down();
 }
 
 
@@ -1649,9 +1568,15 @@ string t_fsharp_generator::type_name(t_type* ttype, bool in_container, bool in_i
   t_program* program = ttype->get_program();
   if (program != NULL && program != program_) {
     string ns = program->get_namespace("fsharp");
+    if (ns.empty()) {
+        ns = program->get_namespace("csharp");
+    }
     string mod = program->get_namespace("fsharp.module");
     if (!ns.empty()) {
-        return ns + "." + (ns.empty() ? ttype->get_name() : mod + "." + ttype->get_name());
+        if (!mod.empty()) {
+            ns += "." + mod;
+        }
+        return ns + "." + ttype->get_name();
     }
   }
 
